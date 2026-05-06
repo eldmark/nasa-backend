@@ -2,13 +2,71 @@ const db = require('../db');
 
 exports.getAllFavorites = async (req, res) => {
     try {
-        const result = await db.query('SELECT * FROM favorites ORDER BY created_at DESC');
-        const grouped = result.rows.reduce((acc, item) => {
-            if (!acc[item.type]) acc[item.type] = [];
-            acc[item.type].push(item);
-            return acc;
-        }, { apod: [], weather: [], earth: [], exoplanets: [], asteroids: [], tech: [] });
-        res.json({ data: grouped, error: null });
+        const { q, page = 1, limit = 10, sort = 'desc', type } = req.query;
+        const offset = (page - 1) * limit;
+        
+        let query = 'SELECT * FROM favorites';
+        let countQuery = 'SELECT COUNT(*) FROM favorites';
+        const params = [];
+        const conditions = [];
+
+        if (q) {
+            conditions.push(`(title ILIKE $${params.length + 1} OR info ILIKE $${params.length + 1})`);
+            params.push(`%${q}%`);
+        }
+
+        if (type) {
+            conditions.push(`type = $${params.length + 1}`);
+            params.push(type);
+        }
+
+        if (conditions.length > 0) {
+            query += ' WHERE ' + conditions.join(' AND ');
+            countQuery += ' WHERE ' + conditions.join(' AND ');
+        }
+
+        query += ` ORDER BY created_at ${sort === 'asc' ? 'ASC' : 'DESC'}`;
+        query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        const countParams = [...params];
+        params.push(parseInt(limit), parseInt(offset));
+
+        const result = await db.query(query, params);
+        const countResult = await db.query(countQuery, countParams);
+        const totalItems = parseInt(countResult.rows[0].count);
+
+        // If a specific type is requested, we don't need to group everything
+        // But for backward compatibility with the current frontend (which expects grouped data),
+        // we can still return a grouped object if type is not provided, 
+        // OR just return the list and let the frontend handle it.
+        // Let's stick to returning a list if type is provided, otherwise return grouped.
+        
+        if (type) {
+            res.json({
+                data: result.rows,
+                meta: {
+                    totalItems,
+                    currentPage: parseInt(page),
+                    totalPages: Math.ceil(totalItems / limit)
+                },
+                error: null
+            });
+        } else {
+            const grouped = result.rows.reduce((acc, item) => {
+                if (!acc[item.type]) acc[item.type] = [];
+                acc[item.type].push(item);
+                return acc;
+            }, { apod: [], weather: [], earth: [], exoplanets: [], asteroids: [], tech: [] });
+
+            res.json({ 
+                data: grouped, 
+                meta: {
+                    totalItems,
+                    currentPage: parseInt(page),
+                    totalPages: Math.ceil(totalItems / limit)
+                },
+                error: null 
+            });
+        }
     } catch (err) {
         res.status(500).json({ error: 'DBError', message: err.message });
     }

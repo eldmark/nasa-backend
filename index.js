@@ -2,6 +2,9 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpecs = require('./src/swagger');
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -12,6 +15,9 @@ app.use(cors({
     allowedHeaders: ['Content-Type']
 }));
 app.use(express.json());
+
+// API Documentation
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 
 // Request Logger
 app.use((req, res, next) => {

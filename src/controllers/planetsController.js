@@ -2,8 +2,37 @@ const db = require('../db');
 
 exports.getCustomPlanets = async (req, res) => {
     try {
-        const result = await db.query('SELECT * FROM custom_planets ORDER BY created_at DESC');
-        res.json({ data: result.rows, error: null });
+        const { q, page = 1, limit = 10 } = req.query;
+        const offset = (page - 1) * limit;
+
+        let query = 'SELECT * FROM custom_planets';
+        let countQuery = 'SELECT COUNT(*) FROM custom_planets';
+        const params = [];
+
+        if (q) {
+            query += ' WHERE name ILIKE $1 OR description ILIKE $1';
+            countQuery += ' WHERE name ILIKE $1 OR description ILIKE $1';
+            params.push(`%${q}%`);
+        }
+
+        query += ' ORDER BY created_at DESC';
+        query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        const countParams = [...params];
+        params.push(parseInt(limit), parseInt(offset));
+
+        const result = await db.query(query, params);
+        const countResult = await db.query(countQuery, countParams);
+        const totalItems = parseInt(countResult.rows[0].count);
+
+        res.json({ 
+            data: result.rows, 
+            meta: {
+                totalItems,
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(totalItems / limit)
+            },
+            error: null 
+        });
     } catch (err) {
         res.status(500).json({ error: 'DBError', message: err.message });
     }
